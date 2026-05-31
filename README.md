@@ -1,4 +1,18 @@
 [![Build Status](https://app.travis-ci.com/miximka/MimeParser.svg?branch=master)](https://app.travis-ci.com/miximka/MimeParser)
+
+> **Maintained fork.** This is `HokuNZ/MimeParser`, a fork of
+> [`miximka/MimeParser`](https://github.com/miximka/MimeParser) maintained for use by
+> [SwiftIMAP](https://github.com/HokuNZ/SwiftIMAP). It exists so downstream consumers can
+> pin a stable semver tag rather than an unstable branch/revision. Upstream is dormant;
+> the `upstream-sync-check` workflow polls it monthly and opens a tracking issue when it
+> advances. To sync manually:
+>
+> ```bash
+> git fetch upstream master
+> git merge upstream/master   # or cherry-pick specific commits
+> git push origin master
+> ```
+
 ## About
 **MimeParser** is a simple MIME (Multipurpose Internet Mail Extensions) parsing library written in Swift (to learn more about mimes refer to [RFC 822](https://tools.ietf.org/html/rfc822), [RFC 2045](https://tools.ietf.org/html/rfc2045), [RFC 2046](https://tools.ietf.org/html/rfc2046))
 

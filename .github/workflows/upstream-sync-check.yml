@@ -1,0 +1,90 @@
+name: Upstream sync check
+
+# Watches the parent repo (miximka/MimeParser) for new commits.
+# This is a maintained fork owned by HokuNZ; upstream is effectively dormant,
+# so we poll monthly rather than continuously. When upstream's default branch
+# advances past what we have merged, this opens (or refreshes) a tracking issue
+# so a maintainer can decide whether to pull the changes in.
+
+on:
+  schedule:
+    # 09:00 UTC on the 1st of every month.
+    - cron: "0 9 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/miximka/MimeParser.git || true
+          git fetch upstream master --quiet
+
+      - name: Compare against upstream
+        id: compare
+        run: |
+          # Commits reachable from upstream/master but not from our master.
+          # Commits we add on our side (e.g. this workflow) live on the origin
+          # side of the range, so they never inflate this count.
+          behind=$(git rev-list --count origin/master..upstream/master)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "Upstream is $behind commit(s) ahead of our master."
+          if [ "$behind" -gt 0 ]; then
+            {
+              echo "log<<EOF"
+              git log --oneline origin/master..upstream/master
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or refresh tracking issue
+        if: steps.compare.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEHIND: ${{ steps.compare.outputs.behind }}
+          LOG: ${{ steps.compare.outputs.log }}
+        run: |
+          title="Upstream miximka/MimeParser has $BEHIND new commit(s)"
+          body=$(cat <<EOF
+          The upstream parent \`miximka/MimeParser\` has advanced **$BEHIND commit(s)** beyond this fork's \`master\`.
+
+          New upstream commits:
+
+          \`\`\`
+          $LOG
+          \`\`\`
+
+          ## What to do
+
+          1. Review the commits above for fixes worth pulling in.
+          2. To sync locally:
+             \`\`\`
+             git fetch upstream master
+             git merge upstream/master   # or cherry-pick specific commits
+             git push origin master
+             \`\`\`
+          3. If anything user-facing changed, cut a new tag (e.g. \`0.2.7\`) and update
+             SwiftIMAP's \`Package.swift\` pin.
+
+          _Opened automatically by the \`upstream-sync-check\` workflow._
+          EOF
+          )
+
+          existing=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$title" --body "$body"
+            echo "Refreshed existing tracking issue #$existing."
+          else
+            gh label create upstream-sync --description "Tracks unmerged upstream changes" --color FBCA04 2>/dev/null || true
+            gh issue create --title "$title" --body "$body" --label upstream-sync
+          fi
