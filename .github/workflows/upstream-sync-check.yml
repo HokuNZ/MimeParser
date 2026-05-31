@@ -27,23 +27,38 @@ jobs:
 
       - name: Fetch upstream
         run: |
-          git remote add upstream https://github.com/miximka/MimeParser.git || true
-          git fetch upstream master --quiet
+          # Add the remote only if absent; a blanket `|| true` would also hide a
+          # malformed-URL or bad-name failure. Keep fetch output (no --quiet) so a
+          # red run is diagnosable — this watcher is the only monthly signal.
+          git remote get-url upstream >/dev/null 2>&1 \
+            || git remote add upstream https://github.com/miximka/MimeParser.git
+          git fetch upstream master
 
       - name: Compare against upstream
         id: compare
         run: |
+          # Both refs must resolve, or a "0 behind" result would be meaningless and
+          # the watch would silently pass while upstream had actually moved. Verify
+          # first, then assert the count is numeric, so any anomaly fails the run.
+          git rev-parse --verify origin/master >/dev/null
+          git rev-parse --verify upstream/master >/dev/null
           # Commits reachable from upstream/master but not from our master.
           # Commits we add on our side (e.g. this workflow) live on the origin
           # side of the range, so they never inflate this count.
           behind=$(git rev-list --count origin/master..upstream/master)
+          case "$behind" in
+            ''|*[!0-9]*) echo "::error::behind count not numeric: '$behind'"; exit 1 ;;
+          esac
           echo "behind=$behind" >> "$GITHUB_OUTPUT"
           echo "Upstream is $behind commit(s) ahead of our master."
           if [ "$behind" -gt 0 ]; then
+            # Randomised heredoc delimiter so an upstream commit subject of literally
+            # "EOF" can't close the block early and corrupt the step output.
+            delim="LOG_EOF_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
             {
-              echo "log<<EOF"
+              echo "log<<$delim"
               git log --oneline origin/master..upstream/master
-              echo "EOF"
+              echo "$delim"
             } >> "$GITHUB_OUTPUT"
           fi
 
@@ -85,6 +100,9 @@ jobs:
             gh issue edit "$existing" --title "$title" --body "$body"
             echo "Refreshed existing tracking issue #$existing."
           else
-            gh label create upstream-sync --description "Tracks unmerged upstream changes" --color FBCA04 2>/dev/null || true
+            # Create the label only if missing, rather than suppressing all stderr —
+            # a blanket 2>/dev/null would also hide auth/permission failures.
+            gh label list --json name --jq '.[].name' | grep -qx upstream-sync \
+              || gh label create upstream-sync --description "Tracks unmerged upstream changes" --color FBCA04
             gh issue create --title "$title" --body "$body" --label upstream-sync
           fi
