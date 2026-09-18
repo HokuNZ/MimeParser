@@ -329,4 +329,22 @@ class MimeParsingTests: XCTestCase {
         XCTAssertEqual(mime.header.field(forName: "Cc"), nil)
         XCTAssertEqual(mime.header.field(forName: "Subject")?.body, "Emacs implementations, list of, regular post [long, FAQ]")
     }
+
+    // MARK: - Unquoted parameter values with spaces
+
+    func testUnquotedParameterValueWithSpacesIsTakenUpToTheNextSemicolon() throws {
+        let message = "Content-Type: application/octet-stream;\r\n\tx-unix-mode=0666;\r\n\tname=Ponoko Plans.zip\r\n"
+            + "Content-Disposition: attachment;\r\n\tfilename=\"Ponoko Plans.zip\"\r\n\r\nUEsDBBQ=\r\n"
+        let mime = try MimeParser().parse(message)
+        XCTAssertEqual(mime.header.contentType?.parameters["name"], "Ponoko Plans.zip")
+        XCTAssertEqual(mime.header.contentType?.parameters["x-unix-mode"], "0666")
+        XCTAssertEqual(mime.header.contentDisposition?.parameters["filename"], "Ponoko Plans.zip")
+    }
+
+    func testAnUnquotedValueStopsAtTheNextParameter() throws {
+        let message = "Content-Type: text/plain; name=two words here; charset=us-ascii\r\n\r\nbody\r\n"
+        let mime = try MimeParser().parse(message)
+        XCTAssertEqual(mime.header.contentType?.parameters["name"], "two words here")
+        XCTAssertEqual(mime.header.contentType?.parameters["charset"], "us-ascii")
+    }
 }

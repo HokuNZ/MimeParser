@@ -188,16 +188,20 @@ struct HeaderFieldParametersParser {
         return try processor.expectToken()
     }
     
+    /// RFC 2045 requires a value containing spaces to be quoted, but Apple Mail before 2008
+    /// and some webmail still write `name=Ponoko Plans.zip`. The tokens up to the next `;`
+    /// are the value; failing the whole message over a filename hides its body.
     private static func parseParameterValue(with processor: HeaderFieldTokenProcessor) throws -> String {
         do {
             return try processor.expectQuotedString()
         } catch {}
-        
-        do {
-            return try processor.expectToken()
-        } catch {}
-        
-        throw Error.invalidParameterValue
+        guard var value = try? processor.expectToken() else {
+            throw Error.invalidParameterValue
+        }
+        while let more = try? processor.expectToken() {
+            value += " " + more
+        }
+        return value
     }
     
     private static func parseParameter(with processor: HeaderFieldTokenProcessor) throws -> Parameter {
